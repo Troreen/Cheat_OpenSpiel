@@ -74,6 +74,16 @@ class Player:
     def __init__(self, name):
         self.name = name
         self.hand = []
+        self.info_state = []  # Personal view of the game history
+
+    def update_info_state(self, event):
+        # Add event to player's information state if they should see it
+        if self.should_see_event(event):
+            self.info_state.append(event)
+
+    def should_see_event(self, event):
+        # Determine if the player should see the event
+        return True # For now, players see all events
     
     # Adds cards to player's hand
     def receive_cards(self, cards):
@@ -108,6 +118,17 @@ class GameState:
         self.current_player_index = 0
         self.central_pile = []
         self.current_claim = None
+        self.history = [] # Global game history
+        # Initialize player specific information states
+        for player in players:
+            player.info_state = [] 
+
+    def add_to_history(self, event):
+        # Accepts detailed events as dictionaries
+        self.history.append(event)
+        # Update all player information states with the new event
+        for player in self.players:
+            player.update_info_state(event)
 
     # Move to the next player
     def next_player(self):
@@ -127,13 +148,16 @@ class GameState:
         return: True if the claim is valid, False otherwise.
         '''
         self.current_claim = (claim, number)
+        # Log the claim in the game history
+        event = {'type': 'claim', 'player': player.name, 'claim': claim, 'number': number}
+        self.add_to_history(event)
         print(f"{player.name} claims to be playing {number} card(s) of rank {claim}.")
 
     # Handle a challenge. Return True if the challenger wins, False otherwise.
     def challenge(self):
         if not self.central_pile or not self.current_claim:
             return None
-
+        
         # Extract the last set of played cards
         last_played = self.central_pile[-1]
 
@@ -151,6 +175,18 @@ class GameState:
     def resolve_challenge(self, challenge_result, challenger):
         loser = self.players[self.current_player_index] if challenge_result else challenger
         loser.receive_cards(self.central_pile)
+        
+        # Compact history entry
+        challenge_info = {
+            'chlr': challenger.name[0],  # Using just the first letter or a player ID
+            'chld': self.players[self.current_player_index].name[0],
+            'res': 'W' if challenge_result else 'L',
+            'pile': ''.join([str(card) for card in self.central_pile]),  # Compact card list
+            'claim': self.current_claim[0],  # Assuming claim is a tuple (rank, number)
+            'num': self.current_claim[1]
+        }
+        self.add_to_history(challenge_info)
+
         self.central_pile = []  # Clear the central pile
 
 
@@ -161,6 +197,13 @@ class GameState:
                 return player
         return None
     
+    def print_history(self):
+        print("Game History:")
+        for entry in self.history:
+            # Decode each entry into a readable format based on your compact history design
+            readable_entry = f"Challenger: {entry['chlr']}, Challenged: {entry['chld']}, Result: {'Win' if entry['res'] == 'W' else 'Lose'}, Claim: {entry['claim']}{entry['num']}, Pile: {entry['pile']}"
+            print(readable_entry)
+
 def main():
     # Create players
     num_players = int(input("Enter the number of players: "))
