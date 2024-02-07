@@ -1,4 +1,10 @@
+import numpy as np
 import random
+
+# Constants
+N = 100  # Max rounds
+M = 4  # Max actions per round
+D = 5  # Details per action (arbitrary for demonstration)
 
 class Card: 
     # Mapping ranks to numerical values for comparison
@@ -113,22 +119,45 @@ class Player:
         return ', '.join(str(card) for card in self.hand)
     
 class GameState:
+            
+    # Define encodings
+    rank_encodings = {'2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, '9': 7, 'T': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12}
+    suit_encodings = {'H': 0, 'D': 1, 'S': 2, 'C': 3}
+    action_encodings = { 'play': 0, 'claim': 1, 'challenge': 2, 'win_challenge': 3, 'lose_challenge': 4 }
+    outcome_encodings = { 'win': 0, 'lose': 1, 'ongoing': 2 }
+
+    # Assuming maximums for demonstration
+    N = 100  # Max rounds
+    M = 4  # Max actions per round
+    D = 5  # Details per action (arbitrary for demonstration)
+    number_of_players = 4  # For demonstration
+
+    # Initialize tensors
+    game_history_tensor = np.zeros((N, M, D), dtype=int)
+    player_info_tensors = np.zeros((number_of_players, N, M, D), dtype=int)
+    
+    
     def __init__(self, players):
         self.players = players
         self.current_player_index = 0
         self.central_pile = []
         self.current_claim = None
         self.history = [] # Global game history
+        # Tensor-based history initialization here
+        self.game_history_tensor = np.zeros((N, M, D), dtype=int)
+        self.player_info_tensors = np.zeros((len(players), N, M, D), dtype=int)
         # Initialize player specific information states
         for player in players:
-            player.info_state = [] 
+            player.info_state = []
 
-    def add_to_history(self, event):
-        # Accepts detailed events as dictionaries
-        self.history.append(event)
-        # Update all player information states with the new event
-        for player in self.players:
-            player.update_info_state(event)
+    def update_game_history(round_index, action_index, player_id, action_type, card_rank, card_suit):
+        global game_history_tensor
+        action_type_encoded = action_encodings[action_type]
+        card_rank_encoded = rank_encodings[card_rank]
+        card_suit_encoded = suit_encodings[card_suit]
+        game_history_tensor[round_index, action_index] = [player_id, action_type_encoded, card_rank_encoded, card_suit_encoded, 0]  # Last element reserved for outcome or additional info
+
+
 
     # Move to the next player
     def next_player(self):
@@ -148,9 +177,12 @@ class GameState:
         return: True if the claim is valid, False otherwise.
         '''
         self.current_claim = (claim, number)
-        # Log the claim in the game history
-        event = {'type': 'claim', 'player': player.name, 'claim': claim, 'number': number}
-        self.add_to_history(event)
+        # Convert claim to encoded form and update tensors
+        round_index = # Determine the current round index
+        action_index = # Determine the current action index for the round
+        player_id = # Numeric ID for the player making the claim
+        update_game_history(round_index, action_index, player_id, 'claim', claim_encoded, 0)  # '0' for suit as it's not applicable here
+    
         print(f"{player.name} claims to be playing {number} card(s) of rank {claim}.")
 
     # Handle a challenge. Return True if the challenger wins, False otherwise.
