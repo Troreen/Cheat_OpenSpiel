@@ -81,6 +81,7 @@ class Player:
         self.name = name
         self.hand = []
         self.info_state = []  # Personal view of the game history
+        self.claims = [] # Claims made by the player
 
     def update_info_state(self, event):
         # Add event to player's information state if they should see it
@@ -123,7 +124,7 @@ class GameState:
     # Define encodings
     rank_encodings = {'2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, '9': 7, 'T': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12}
     suit_encodings = {'H': 0, 'D': 1, 'S': 2, 'C': 3}
-    action_encodings = { 'play': 0, 'claim': 1, 'challenge': 2, 'win_challenge': 3, 'lose_challenge': 4 }
+    action_encodings = { 'play': 0, 'claim': 1, 'challenge': 2, 'challenge_bluff': 3}
     outcome_encodings = { 'win': 0, 'lose': 1, 'ongoing': 2 }
 
     # Assuming maximums for demonstration
@@ -142,22 +143,41 @@ class GameState:
         self.current_player_index = 0
         self.central_pile = []
         self.current_claim = None
-        self.history = [] # Global game history
-        # Tensor-based history initialization here
-        self.game_history_tensor = np.zeros((N, M, D), dtype=int)
-        self.player_info_tensors = np.zeros((len(players), N, M, D), dtype=int)
-        # Initialize player specific information states
-        for player in players:
-            player.info_state = []
+        self.history = []  # Global game history
+        # Initialize tensors with dimensions for N rounds, M actions per round, D details per action
+        self.game_history_tensor = np.zeros((self.N, self.M, self.D), dtype=int)
+        self.player_info_tensors = np.zeros((len(players), self.N, self.M, self.D), dtype=int)
+        self.round_index = 0 
+        self.action_index = 0
 
-    def update_game_history(round_index, action_index, player_id, action_type, card_rank, card_suit):
-        global game_history_tensor
-        action_type_encoded = action_encodings[action_type]
-        card_rank_encoded = rank_encodings[card_rank]
-        card_suit_encoded = suit_encodings[card_suit]
-        game_history_tensor[round_index, action_index] = [player_id, action_type_encoded, card_rank_encoded, card_suit_encoded, 0]  # Last element reserved for outcome or additional info
+    def update_game_history(self, action_type, card_rank, card_suit, outcome=2):
+        ''' 
+        Update the game history tensor with the current action.
 
+        :param action_type: The type of action being taken (play, claim, challenge).
+        :param card_rank: The rank of the card being played or claimed.
+        :param card_suit: The suit of the card being played or claimed.
+        :param outcome: The outcome of the action (win, lose, ongoing). Default is ongoing.
+        '''
+        action_type_encoded = GameState.action_encodings[action_type]
+        card_rank_encoded = GameState.rank_encodings.get(card_rank, -1)  # Use -1 for missing values
+        card_suit_encoded = GameState.suit_encodings.get(card_suit, -1) 
+        self.game_history_tensor[self.round_index, self.action_index] = [self.current_player_index, action_type_encoded, card_rank_encoded, card_suit_encoded, outcome]
 
+    def update_player_info_tensor(self, player_id, action_type, card_rank, card_suit, outcome=2):
+        action_type_encoded = GameState.action_encodings[action_type]
+        card_rank_encoded = GameState.rank_encodings.get(card_rank, -1)
+        card_suit_encoded = GameState.suit_encodings.get(card_suit, -1)
+        self.player_info_tensors[player_id, self.round_index, self.action_index] = [self.current_player_index, action_type_encoded, card_rank_encoded, card_suit_encoded, outcome]
+
+    # Reset action index and increment round index after each round
+    def end_of_round(self):
+        self.round_index += 1
+        self.action_index = 0  # Reset action index at the start of a new round
+
+    # Increment action index after each action
+    def increment_action_index(self):
+        self.action_index += 1
 
     # Move to the next player
     def next_player(self):
@@ -165,62 +185,72 @@ class GameState:
 
     # Add cards to the central pile
     def add_to_pile(self, cards):
-        self.central_pile.extend(cards)
+        self.central_pile.append(cards)
 
-    def make_claim(self, player, claim, number):
+    def make_claim(self, player, claim, number_of_cards):
         '''
         Player makes a claim about the cards they are playing.
 
         :param player: The player making the claim.
         :param claim: The rank the player is claiming.
         :param number: The number of cards the player is claiming to play.
-        return: True if the claim is valid, False otherwise.
+        return: None. Updates the game state with the player's claim.
         '''
-        self.current_claim = (claim, number)
-        # Convert claim to encoded form and update tensors
-        round_index = # Determine the current round index
-        action_index = # Determine the current action index for the round
-        player_id = # Numeric ID for the player making the claim
-        update_game_history(round_index, action_index, player_id, 'claim', claim_encoded, 0)  # '0' for suit as it's not applicable here
-    
-        print(f"{player.name} claims to be playing {number} card(s) of rank {claim}.")
+        self.current_claim = (claim, number_of_cards)
+        player.claims.append((claim, number_of_cards))
+        
+        round_index = self.round_index
+        action_index = self.action_index
+        player_id = self.players.index(player)  # Assuming player objects are in a list and indexable
+
+        # Update the game history tensor and player info tensors
+        self.update_game_history(round_index, action_index, player_id, 'claim', claim, 'N/A', 2)  # 'N/A' for non-applicable suit
+        for pid in range(len(self.players)):
+            self.update_player_info_tensor(pid, round_index, action_index, 'claim', claim, 'N/A', 2)
+
+        print(f"{player.name} claims to be playing {number_of_cards} card(s) of rank {claim}.")
 
     # Handle a challenge. Return True if the challenger wins, False otherwise.
     def challenge(self):
         if not self.central_pile or not self.current_claim:
-            return None
+            # Consider raising an exception or returning a specific value indicating the challenge cannot proceed
+            raise ValueError("Challenge cannot proceed without a current claim or with an empty central pile.")
         
-        # Extract the last set of played cards
-        last_played = self.central_pile[-1]
-
-        # Ensure last_played is a list of cards
-        if not isinstance(last_played, list):
-            last_played = [last_played]
+        # Assuming last_played_cards is always a list of Card objects
+        last_played_cards = self.central_pile[-1]
 
         claimed_rank, _ = self.current_claim
-        if all(card.rank == claimed_rank for card in last_played):
-            return False  # Challenger loses
+        if all(card.rank == claimed_rank for card in last_played_cards):
+            return False  # Challenger loses, indicating the claim was truthful
         else:
-            return True  # Challenger wins
-        
-    # Resolve a challenge
+            return True  # Challenger wins, indicating the claim was a bluff
+
     def resolve_challenge(self, challenge_result, challenger):
         loser = self.players[self.current_player_index] if challenge_result else challenger
-        loser.receive_cards(self.central_pile)
+        # Assume challenge_result is True if the challenge was successful (i.e., there was a bluff)
         
-        # Compact history entry
-        challenge_info = {
-            'chlr': challenger.name[0],  # Using just the first letter or a player ID
-            'chld': self.players[self.current_player_index].name[0],
-            'res': 'W' if challenge_result else 'L',
-            'pile': ''.join([str(card) for card in self.central_pile]),  # Compact card list
-            'claim': self.current_claim[0],  # Assuming claim is a tuple (rank, number)
-            'num': self.current_claim[1]
-        }
-        self.add_to_history(challenge_info)
+        # Record details about the bluff if the challenge was successful
+        bluff_cards = self.central_pile if challenge_result else []
+        
+        # The player receives cards from the central pile regardless of the challenge outcome
+        loser.receive_cards(self.central_pile)
+        self.central_pile = []  # Clear the central pile after resolving
+        
+        # Determine outcome encoding
+        outcome = 0 if challenge_result else 1  # Assuming '0' for win, '1' for lose in your encoding
 
-        self.central_pile = []  # Clear the central pile
-
+        # Update general game history and player info with challenge result and bluff details
+        if challenge_result:  # Only update bluff details if there was a bluff
+            for card in bluff_cards:
+                # Encode each card's rank and suit. Assume 'challenge_bluff' action type for bluffing.
+                self.update_game_history('challenge_bluff', card.rank, card.suit, outcome)
+                for player_id in range(len(self.players)):
+                    self.update_player_info_tensor(player_id, 'challenge_bluff', card.rank, card.suit, outcome)
+        else:
+            # Update without bluff details if no bluff or challenge was unsuccessful
+            self.update_game_history('challenge', 'N/A', 'N/A', outcome)
+            for player_id in range(len(self.players)):
+                self.update_player_info_tensor(player_id, 'challenge', 'N/A', 'N/A', outcome)
 
     # Check if a player has won
     def check_winner(self):
@@ -284,8 +314,18 @@ def main():
         # Player makes a claim
         claim = input("Enter the rank you claim these cards to be (e.g., 'A' for Aces): ")
 
-        # Process played cards
+        # Attempt to play cards
         played_cards, success = current_player.play_cards(cards_to_play, claim, num_cards_to_play)
+
+        if success:
+            # Update the game history for playing cards
+            game_state.update_game_history(game_state.current_round_index, game_state.current_action_index, game_state.current_player_index, 'play', claim, '0')  # '0' for suit as tracking suit is not important
+            # Update information tensor for all players
+            for pid in range(len(game_state.players)):
+                game_state.update_player_info_tensor(pid, game_state.current_round_index, game_state.current_action_index, 'play', claim, '0')
+            # Increment action index
+            game_state.increment_action_index()
+
         if not success:
             print("Invalid play. Please try again.")
             continue
