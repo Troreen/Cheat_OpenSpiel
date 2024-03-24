@@ -1,9 +1,22 @@
 import random
-
+from typing import Dict, List, Tuple
 class Card: 
     # Mapping ranks to numerical values for comparison
-    rank_values = {'2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, 'T':10,
-                     'J':11, 'Q':12, 'K':13, 'A':14}
+    rank_values = {
+        '2':2, 
+        '3':3, 
+        '4':4, 
+        '5':5, 
+        '6':6, 
+        '7':7, 
+        '8':8, 
+        '9':9, 
+        'T':10,                     
+        'J':11, 
+        'Q':12, 
+        'K':13, 
+        'A':14
+    }
     
     # Initialize card with rank and suit
     def __init__(self, rank, suit):
@@ -34,8 +47,11 @@ class Card:
 class Deck:
     # Initialize deck with a standard set of cards
     def __init__(self):
-        self.cards = [Card(rank, suit) for suit in ['H', 'D', 'S', 'C'] 
-                      for rank in Card.rank_values]
+        self.cards = [
+            Card(rank, suit) 
+            for suit in ['H', 'D', 'S', 'C'] 
+            for rank in Card.rank_values
+        ]
     
     # Return string representation of deck
     def __str__(self):
@@ -102,16 +118,69 @@ class Player:
     def show_hand(self):
         return ', '.join(str(card) for card in self.hand)
     
-class GameState:
-    def __init__(self, players):
-        self.players = players
-        self.current_player_index = 0
+class CheatGame:
+    def __init__(self, num_players: int, num_rounds: int = 50):
+        self.num_players = num_players
+        self.players = [Player(f"Player {i}") for i in range(self.num_players)]
+        self.deck = Deck()
+
+        self.max_player_unique_hand_len = self.deck.unique_cards
+        self.max_unique_pile_len = self.deck.unique_cards
+        self.max_history_len = self.num_players**2 * num_rounds
+
+        # +1 for last claim, +num_players for each player deciding to challenge or not
+        #self.max_player_hand_len*num_players + self.max_pile_len + 1 + num_players 
+        
+        # Maximum info_state size
+        # TODO: Continue here
+        self.state_space = {
+            self.max_player_unique_hand_len*self.num_players 
+            }
+           
+          # players card + history len + players bet + opponents bet
+        self.action_space = 2  # pass or bet
+
+        self.reset()
+
+    def reset(self) -> List[int]:
+        """Reset the game state and return the initial information state.
+
+        Returns:
+            List[int]: The initial information state.
+        """
+        self.deck.shuffle()
+        for player in self.players:
+            player.hand = self.deck.deal(len(self.deck) // self.num_players)  # TODO: Dealing has to be fixed for uneven numbers
+        
+        self.history = []
+        self.player_info_states = [[] for _ in range(self.num_players)]  
+
+        self.current_player = 0
         self.central_pile = []
         self.current_claim = None
 
+        self.state = [self.current_player]
+        for player in self.players:
+            
+
+
+        return self.get_info_state()
+
+    def get_info_state(self) -> List[int]:
+        """Get the current information state.
+
+        Returns:
+            List[int]: The current information state.
+        """
+        # 
+    def step(self, action: int) -> Tuple[List[int], int, bool, Dict]:
+
+        return
+    430410
+
     # Move to the next player
     def next_player(self):
-        self.current_player_index = (self.current_player_index + 1) % len(self.players)
+        self.current_player = (self.current_player + 1) % len(self.players)
 
     # Add cards to the central pile
     def add_to_pile(self, cards):
@@ -149,7 +218,7 @@ class GameState:
         
     # Resolve a challenge
     def resolve_challenge(self, challenge_result, challenger):
-        loser = self.players[self.current_player_index] if challenge_result else challenger
+        loser = self.players[self.current_player] if challenge_result else challenger
         loser.receive_cards(self.central_pile)
         self.central_pile = []  # Clear the central pile
 
@@ -190,7 +259,7 @@ def main():
 
     # Game loop
     while not game_state.check_winner():
-        current_player = players[game_state.current_player_index]
+        current_player = players[game_state.current_player]
         print(f"\n{current_player.name}'s turn.")
 
         # Display current player's hand
@@ -221,7 +290,7 @@ def main():
 
         # Check for challenges
         for i in range(len(players) - 1):
-            challenger_index = (game_state.current_player_index + i + 1) % len(players)
+            challenger_index = (game_state.current_player + i + 1) % len(players)
             challenger = players[challenger_index]
             challenge_input = input(f"{challenger.name}, do you want to challenge {current_player.name}? (y/n) ")
             if challenge_input.lower() == 'y':
