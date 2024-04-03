@@ -140,7 +140,55 @@ class CheatGame:
           # players card + history len + players bet + opponents bet
         self.action_space = 2  # pass or bet
 
+        self.rank_one_hot = {rank: [0] * 13 for rank in Card.rank_values.keys()}
+        for rank in self.rank_one_hot:
+            self.rank_one_hot[rank][Card.rank_values[rank] - 2] = 1
+
         self.reset()
+
+    def encode_hand(self, hand):
+        """Encode a player's hand into a one-hot vector."""
+        hand_encoding = [0] * 13
+        for card in hand:
+            rank_index = Card.rank_values[card.rank] - 2
+            hand_encoding[rank_index] += 1
+        return hand_encoding
+    
+    def encode_action_history(self):
+        """Encode the action history."""
+        # Assume self.history is a list of actions
+        # Each action: [num_cards, claimed_rank, card1_rank, ..., card4_rank, challenged]
+        history_enc = []
+        for action in self.history:
+            action_enc = []
+            # Encode number of cards
+            num_cards_enc = [0] * 4
+            num_cards_enc[action[0] - 1] = 1
+            action_enc.extend(num_cards_enc)
+
+            # Encode claimed rank
+            action_enc.extend(self.rank_one_hot[action[1]])
+
+            # Encode actual cards played
+            for card_rank in action[2:6]:
+                if card_rank == 0: # No card played
+                    action_enc.extend([0] * 13)
+                else:
+                    rank_index = card_rank - 2
+                    card_rank_enc = [0] * 13
+                    card_rank_enc[rank_index] = 1
+                    action_enc.extend(card_rank_enc)
+
+            # Encode challenge
+            action_enc.append(action[6])
+
+            history_enc.extend(action_enc)
+        
+        # Pad the history to a fixed size for consistency
+        max_history_len = self.max_history_len * (4 + 13 + 13*4 + 1)
+        history_enc.extend([0] * (max_history_len - len(history_enc)))
+
+        return history_enc
 
     def reset(self) -> List[int]:
         """Reset the game state and return the initial information state.
@@ -172,11 +220,27 @@ class CheatGame:
         Returns:
             List[int]: The current information state.
         """
-        # 
+        # PLayer's hand, action history, turn
+
+        # action divides into 2 -> droppping cards and claiming
+        # we have 2 numbers for the claim: first is the card (which rank we're claiming) and the second one is the amount of cards we're playing (number is the same claim and drop)
+        # now we have 4 numbers that indicate at most 4 cards that we have played 
+        # challenge representation: +1 at the end of an action to represent if claim was challenged or not
+        # action representation [how many cards] [claimed card rank] [card1] [card2] [card3] [card4] [if challenge]
+
+        current_player_hand_enc = self.encode_hand(self.players[self.current_player].hand)
+        action_history_enc = self.encode_action_history()
+        turn_enc = [self.current_player]
+
+        # Combine all parts of the state
+        state = current_player_hand_enc + action_history_enc + turn_enc
+        return state
+
+
+
     def step(self, action: int) -> Tuple[List[int], int, bool, Dict]:
 
         return
-    430410
 
     # Move to the next player
     def next_player(self):
@@ -232,22 +296,14 @@ class CheatGame:
     
 def main():
     # Create players
-    num_players = int(input("Enter the number of players: "))
+    num_players = 2
     players = [Player(f"Player {i+1}") for i in range(num_players)]
 
-    # Determine the number of decks needed based on player count (52 cards per set of 4 players)
-    num_decks = 0
-    while num_players > 0:
-        num_decks += 1
-        num_players -= 4
-
     # Initialize the game state
-    game_state = GameState(players)
+    game_state = CheatGame(players)
 
     # Create and shuffle the deck
     deck = Deck()
-    for _ in range(1, num_decks):
-        deck += Deck()
     deck.shuffle()
 
     # Deal cards to players
